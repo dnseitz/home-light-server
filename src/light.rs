@@ -52,6 +52,8 @@ impl LightInfo {
                 _ => {}
             }
         }
+        
+        // Ignore the rest of the data, it contains animation/schedule info which we don't support
 
         Ok(info)
     }

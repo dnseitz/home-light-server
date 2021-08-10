@@ -6,6 +6,7 @@
 mod decoder;
 mod light;
 mod runner;
+mod peripheral;
 
 use btleplug::api::CharPropFlags;
 use btleplug::api::{bleuuid::uuid_from_u16, WriteType, Central, Manager as _, Peripheral};
@@ -61,56 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 );
                 // Check if it's the peripheral we want.
                 if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER) {
-                    println!("Found matching peripheral {:?}...", &local_name);
-                    while !peripheral.is_connected().await? {
-                        if let Err(err) = peripheral.connect().await {
-                            eprintln!("Error connecting to peripheral, retrying: {}", err);
-                        }
-                    }
-                    let is_connected = peripheral.is_connected().await?;
-                    println!(
-                        "Now connected ({:?}) to peripheral {:?}.",
-                        is_connected, &local_name
-                    );
-                    let chars = peripheral.discover_characteristics().await?;
-                    if is_connected {
-                        println!("Discover peripheral {:?} characteristics...", local_name);
-                        for characteristic in chars.into_iter() {
-                            println!("Checking characteristic {:?}", characteristic);
-                            // Subscribe to notifications from the characteristic with the selected
-                            // UUID.
-                            if characteristic.uuid == NOTIFY_CHARACTERISTIC_UUID
-                                && characteristic.properties.contains(CharPropFlags::NOTIFY)
-                            {
-                                println!("Subscribing to characteristic {:?}", characteristic.uuid);
-                                peripheral.subscribe(&characteristic).await?;
-                                let mut notification_stream = peripheral.notifications().await?;
-
-                                peripheral.write(&characteristic, &[0xFE, 0x04, 0x00, 0xFF], WriteType::WithoutResponse).await?;
-
-                                let (tx, rx) = mpsc::channel();
-                                tokio::spawn(async move {
-                                    runner::start(rx).await;
-                                });
-                                let mut decoder = HomeLightDecoder::new(tx);
-                                // Process while the BLE connection is not broken or stopped.
-                                while let Some(data) = notification_stream.next().await {
-                                    if data.uuid == NOTIFY_CHARACTERISTIC_UUID {
-                                        decoder.consume_data_packet(&data.value);
-                                    }
-                                    println!(
-                                        "Received data from {:?} [{:?}]: {:?}",
-                                        local_name, data.uuid, data.value
-                                    );
-                                }
-                            }
-                        }
-                        println!("Disconnecting from peripheral {:?}...", local_name);
-                        peripheral
-                            .disconnect()
-                            .await
-                            .expect("Error disconnecting from BLE peripheral");
-                    }
+                    runner::start(peripheral).await;
                 } else {
                     println!("Skipping unknown peripheral {:?}", peripheral);
                 }
