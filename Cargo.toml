@@ -1,0 +1,19 @@
+[package]
+name = "home-light-hub"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.15"
+futures-util = "0.3.15"
+btleplug = { version = "0.8", features = ["serde"] }
+tokio = { version = "1.7.1", features = ["full"] }
+log = "0.4"
+pretty_env_logger = "0.3"
+uuid = "0.8"
+
+num = "0.4"
+num-derive = "0.3"
+num-traits = "0.2"
