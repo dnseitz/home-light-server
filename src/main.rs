@@ -2,25 +2,19 @@
 // Big Sur or later.
 
 #[macro_use] extern crate num_derive;
+#[macro_use] extern crate rocket;
 
 mod decoder;
 mod light;
 mod runner;
 mod peripheral;
 
-use btleplug::api::CharPropFlags;
-use btleplug::api::{bleuuid::uuid_from_u16, WriteType, Central, Manager as _, Peripheral};
+use btleplug::api::{bleuuid::uuid_from_u16, Central, Manager as _, Peripheral};
 use btleplug::platform::Manager;
-use futures::stream::StreamExt;
 use std::error::Error;
 use std::time::Duration;
 use tokio::time;
 use uuid::Uuid;
-
-use std::sync::mpsc;
-
-use decoder::HomeLightDecoder;
-
 
 /// Only devices whose name contains this string will be tried.
 //const PERIPHERAL_NAME_MATCH_FILTER: &str = "Bluno";
@@ -29,7 +23,14 @@ const PERIPHERAL_NAME_MATCH_FILTER: &str = "TEST_DEVICE";
 const NOTIFY_CHARACTERISTIC_UUID: Uuid = uuid_from_u16(0xDFB1);
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
+    if let Err(err) = start().await {
+        println!("Error starting server: {}", err);
+    }
+}
+
+async fn start() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::init();
     let manager = Manager::new().await?;
     let adapter_list = manager.adapters().await?;
     if adapter_list.is_empty() {
@@ -37,6 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     for adapter in adapter_list.iter() {
+        println!("Adapter: {:?}", adapter);
         println!("Starting scan...");
         adapter
             .start_scan()
@@ -62,12 +64,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 );
                 // Check if it's the peripheral we want.
                 if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER) {
-                    runner::start(peripheral).await;
+                    // We only support one peripheral at a time for now...
+                    runner::start(peripheral).await.unwrap();
                 } else {
                     println!("Skipping unknown peripheral {:?}", peripheral);
                 }
             }
         }
     }
+
     Ok(())
 }
+

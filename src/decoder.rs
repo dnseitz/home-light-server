@@ -85,8 +85,8 @@ impl HomeLightDecoder {
                                         // We found the expected byte, we have a full packet of
                                         // data.
                                         //
-                                        println!("Received data packed: ({:?}) - {:?}", message_type, self.current_data);
-                                        self.tx.send(HomeLightMessage { message_type, data: self.current_data.clone() });
+                                        println!("Received data packet: ({:?}) - {:?}", message_type, self.current_data);
+                                        self.tx.send(HomeLightMessage { message_type, data: self.current_data.clone() }).unwrap();
                                     }
 
                                     self.current_data = Vec::new();

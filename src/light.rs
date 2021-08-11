@@ -8,18 +8,18 @@ enum ColorState {
     Animating = 0x01,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HSVColor {
     pub h: f64,
     pub s: f64,
     pub v: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct LightInfo {
-    name: String,
-    is_on: bool,
-    color: HSVColor,
+    pub name: String,
+    pub is_on: bool,
+    pub color: HSVColor,
 }
 
 impl LightInfo {
