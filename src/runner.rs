@@ -14,6 +14,8 @@ use crate::decoder::HomeLightMessageType;
 use crate::light::LightInfo;
 use crate::peripheral;
 
+const LIGHT_INFO_TTL: u128 = 300_000;
+
 pub(crate) struct PeripheralState {
     peripherals: Vec<(RocketRunState, RocketCommandChannel)>
     //peripherals: Vec<Arc<Mutex<(RunState, Sender<peripheral::Command>)>>>
@@ -184,7 +186,7 @@ async fn _get_latest_device_info(index: usize, state: &State<PeripheralState>, f
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_millis();
-            if current_time - *timestamp < 300_000 {
+            if current_time - *timestamp < LIGHT_INFO_TTL {
                 return light_info.clone();
             }
         }
@@ -208,7 +210,7 @@ async fn _get_latest_device_info(index: usize, state: &State<PeripheralState>, f
                 .expect("Time went backwards")
                 .as_millis();
             if let Some((light_info, timestamp)) = &state.peripherals[index].0.lock().unwrap().light_info {
-                if current_time - *timestamp < 300_000 {
+                if current_time - *timestamp < LIGHT_INFO_TTL {
                     return light_info.clone();
                 }
             }
@@ -227,12 +229,7 @@ pub(crate) async fn start(peripheral: &Peripheral) -> btleplug::Result<(RocketRu
     let data_run_state = run_state.clone();
     rocket::tokio::spawn(async move {
         loop {
-            //println!("Inside data rx test loop");
-            //sleep(Duration::from_millis(500)).await;
-            // TODO: For some reason, if this call blocks in blocks the whole program... Need to
-            // investigate this.
             while let Some(message) = data_rx.recv().await {
-            //if let Ok(message) = data_rx.try_recv() {
                 println!("Message Received: ({:?}) - {:?}", message.message_type, message.data);
                 match message.message_type {
                     HomeLightMessageType::DeviceInfo => {

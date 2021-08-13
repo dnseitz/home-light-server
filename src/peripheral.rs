@@ -126,9 +126,7 @@ impl HomeLightPeripheral {
 
     async fn process_notifications(peripheral: &Peripheral, mut decoder: decoder::HomeLightDecoder) -> btleplug::Result<()> 
     {
-        println!("Trying to get notification stream for peripheral: {:?}", peripheral);
         let mut notification_stream = peripheral.notifications().await?;
-        println!("Got notification stream for peripheral: {:?}", peripheral);
         // Process while the BLE connection is not broken or stopped.
         while let Some(data) = notification_stream.next().await {
             if data.uuid == NOTIFY_CHARACTERISTIC_UUID {
