@@ -1,7 +1,7 @@
 
 use num::FromPrimitive;
 
-use std::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 
 const DATA_BEGIN_BYTE: u8 = 0xFE;
 const DATA_END_BYTE: u8 = 0xFF;
@@ -23,11 +23,11 @@ pub(crate) struct HomeLightDecoder {
     data_remaining: Option<u8>,
     current_data: Vec<u8>,
 
-    tx: Sender<HomeLightMessage>
+    tx: UnboundedSender<HomeLightMessage>
 }
 
 impl HomeLightDecoder {
-    pub fn new(tx: Sender<HomeLightMessage>) -> Self {
+    pub fn new(tx: UnboundedSender<HomeLightMessage>) -> Self {
         HomeLightDecoder {
             is_in_readable_command: false,
             current_message_type: None,
@@ -86,7 +86,7 @@ impl HomeLightDecoder {
                                         // data.
                                         //
                                         println!("Received data packet: ({:?}) - {:?}", message_type, self.current_data);
-                                        self.tx.send(HomeLightMessage { message_type, data: self.current_data.clone() }).unwrap();
+                                        let _ = self.tx.send(HomeLightMessage { message_type, data: self.current_data.clone() });
                                     }
 
                                     self.current_data = Vec::new();

@@ -1,13 +1,14 @@
 
 use rocket::State;
 
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use btleplug::platform::Peripheral;
 
-use tokio::time::{sleep, Duration};
+use tokio::sync::mpsc::UnboundedSender;
+
+use rocket::tokio::time::{sleep, Duration};
 
 use crate::decoder::HomeLightMessageType;
 use crate::light::LightInfo;
@@ -31,7 +32,7 @@ pub(crate) struct RunState {
 }
 
 pub(crate) type RocketRunState = Arc<Mutex<RunState>>;
-pub(crate) type RocketCommandChannel = Arc<Mutex<Sender<peripheral::Command>>>;
+pub(crate) type RocketCommandChannel = Arc<Mutex<UnboundedSender<peripheral::Command>>>;
 
 pub static LIGHT_STATE_REQUEST_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
@@ -60,7 +61,7 @@ pub(crate) async fn set_power_state(index: usize, value: String, state: &State<P
 
     if let Some(new_value) = new_value {
         let command_channel = state.peripherals[index].1.lock().unwrap();
-        command_channel.send(peripheral::Command::SetBrightness(new_value)).unwrap();
+        let _ = command_channel.send(peripheral::Command::SetBrightness(new_value));
 
         if let Some((light_info, _)) = &mut state.peripherals[index].0.lock().unwrap().light_info {
             light_info.is_on = new_value > 0.0;
@@ -96,7 +97,7 @@ pub(crate) async fn set_brightness(index: usize, value: String, state: &State<Pe
             new_color.v = (new_value as f64 / 100.0).clamp(0.0, 1.0);
 
             let command_channel = state.peripherals[index].1.lock().unwrap();
-            command_channel.send(peripheral::Command::SetLEDColor(new_color.clone())).unwrap();
+            let _ = command_channel.send(peripheral::Command::SetLEDColor(new_color.clone()));
             if let Some((light_info, _)) = &mut state.peripherals[index].0.lock().unwrap().light_info {
                 light_info.color.v = new_color.v;
             }
@@ -128,7 +129,7 @@ pub(crate) async fn set_hue(index: usize, value: String, state: &State<Periphera
             new_color.h = new_value.clamp(0.0, 360.0);
 
             let command_channel = state.peripherals[index].1.lock().unwrap();
-            command_channel.send(peripheral::Command::SetLEDColor(new_color.clone())).unwrap();
+            let _ = command_channel.send(peripheral::Command::SetLEDColor(new_color.clone()));
             if let Some((light_info, _)) = &mut state.peripherals[index].0.lock().unwrap().light_info {
                 light_info.color.h = new_color.h;
             }
@@ -162,7 +163,7 @@ pub(crate) async fn set_saturation(index: usize, value: String, state: &State<Pe
             new_color.s = (new_value as f64 / 100.0).clamp(0.0, 1.0);
 
             let command_channel = &state.peripherals[index].1.lock().unwrap();
-            command_channel.send(peripheral::Command::SetLEDColor(new_color.clone())).unwrap();
+            let _ = command_channel.send(peripheral::Command::SetLEDColor(new_color.clone()));
             if let Some((light_info, _)) = &mut state.peripherals[index].0.lock().unwrap().light_info {
                 light_info.color.s = new_color.s;
             }
@@ -195,7 +196,7 @@ async fn _get_latest_device_info(index: usize, state: &State<PeripheralState>, f
         //if request_in_flight == false {
             println!("Request out of date and no request in flight, sending");
             let command_channel = &state.peripherals[index].1.lock().unwrap();
-            command_channel.send(peripheral::Command::GetDeviceInfo).unwrap();
+            let _ = command_channel.send(peripheral::Command::GetDeviceInfo);
             //request_in_flight = true;
         }
 
@@ -218,30 +219,36 @@ async fn _get_latest_device_info(index: usize, state: &State<PeripheralState>, f
 pub(crate) async fn start(peripheral: &Peripheral) -> btleplug::Result<(RocketRunState, RocketCommandChannel)> {
     let (mut home_light_peripheral, command_tx) = peripheral::HomeLightPeripheral::new(peripheral.clone());
 
-    let data_rx = home_light_peripheral.start_listening().await?;
+    let mut data_rx = home_light_peripheral.start_listening().await?;
 
     let run_state = Arc::new(Mutex::new(RunState::new()));
     
     println!("Setting up decoder thread");
     let data_run_state = run_state.clone();
-    tokio::spawn(async move {
-        for message in data_rx {
-            println!("Message Received: ({:?}) - {:?}", message.message_type, message.data);
-
-            match message.message_type {
-                HomeLightMessageType::DeviceInfo => {
-                    if let Ok(info) = LightInfo::from_raw_data(&message.data) {
-                        println!("{:?}", info);
-                        let mut state = data_run_state.lock().unwrap();
-                        let current_time = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .expect("Time went backwards")
-                            .as_millis();
-                        state.light_info = Some((info, current_time));
-                        LIGHT_STATE_REQUEST_IN_FLIGHT.store(false, Ordering::Release);
+    rocket::tokio::spawn(async move {
+        loop {
+            //println!("Inside data rx test loop");
+            //sleep(Duration::from_millis(500)).await;
+            // TODO: For some reason, if this call blocks in blocks the whole program... Need to
+            // investigate this.
+            while let Some(message) = data_rx.recv().await {
+            //if let Ok(message) = data_rx.try_recv() {
+                println!("Message Received: ({:?}) - {:?}", message.message_type, message.data);
+                match message.message_type {
+                    HomeLightMessageType::DeviceInfo => {
+                        if let Ok(info) = LightInfo::from_raw_data(&message.data) {
+                            println!("{:?}", info);
+                            let mut state = data_run_state.lock().unwrap();
+                            let current_time = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .expect("Time went backwards")
+                                .as_millis();
+                            state.light_info = Some((info, current_time));
+                            LIGHT_STATE_REQUEST_IN_FLIGHT.store(false, Ordering::Release);
+                        }
                     }
+                    _ => { println!("Unhandled!") }
                 }
-                _ => { println!("Unhandled!") }
             }
         }
     });

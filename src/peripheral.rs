@@ -1,10 +1,9 @@
-
 use futures::StreamExt;
-use std::sync::mpsc;
 use std::sync::atomic::Ordering;
 use btleplug::api::{Characteristic, CharPropFlags, Peripheral as _, WriteType};
 use btleplug::platform::Peripheral;
 use tokio::task::JoinHandle;
+use tokio::sync::mpsc;
 
 use crate::light::HSVColor;
 use crate::NOTIFY_CHARACTERISTIC_UUID;
@@ -33,7 +32,11 @@ impl Command {
     fn get_command_data(&self) -> Vec<u8> {
         match self {
             Command::SetLEDColor(color) => {
-                vec![(color.h / 360.0 * 255.0).round() as u8, (color.s * 255.0).round() as u8, (color.v * 255.0).round() as u8]
+                vec![
+                    (color.h / 360.0 * 255.0).round() as u8, // H
+                    (color.s * 255.0).round() as u8,         // S
+                    (color.v * 255.0).round() as u8          // V
+                ]
             }
             Command::SetBrightness(brightness) => {
                 vec![(brightness.clamp(0.0, 1.0) * 255.0).round() as u8]
@@ -55,22 +58,22 @@ impl Command {
 }
 
 pub(crate) struct HomeLightPeripheral {
-    rx: Option<mpsc::Receiver<Command>>,
+    rx: Option<mpsc::UnboundedReceiver<Command>>,
     raw_peripheral: Peripheral,
     notification_handle: Option<JoinHandle<()>>,
     command_handle: Option<JoinHandle<()>>,
 }
 
 impl HomeLightPeripheral {
-    pub fn new(raw_peripheral: Peripheral) -> (Self, mpsc::Sender<Command>) {
-        let (tx, rx) = mpsc::channel();
+    pub fn new(raw_peripheral: Peripheral) -> (Self, mpsc::UnboundedSender<Command>) {
+        let (tx, rx) = mpsc::unbounded_channel();
         let notification_handle = None;
         let command_handle = None;
 
         (HomeLightPeripheral { rx: Some(rx), raw_peripheral, notification_handle, command_handle }, tx)
     }
 
-    pub async fn start_listening(&mut self) -> btleplug::Result<mpsc::Receiver<decoder::HomeLightMessage>> {
+    pub async fn start_listening(&mut self) -> btleplug::Result<mpsc::UnboundedReceiver<decoder::HomeLightMessage>> {
         while Self::connect_if_needed(&self.raw_peripheral).await == false {}
         let chars = self.raw_peripheral.discover_characteristics().await?;
         let is_connected = self.raw_peripheral.is_connected().await?;
@@ -85,20 +88,19 @@ impl HomeLightPeripheral {
                     self.raw_peripheral.subscribe(&characteristic).await?;
                     println!("Subscribed");
 
-                    let (tx, rx) = mpsc::channel();
+                    let (tx, rx) = mpsc::unbounded_channel();
                     let decoder = decoder::HomeLightDecoder::new(tx);
                     let notification_peripheral = self.raw_peripheral.clone();
                     self.notification_handle = Some(tokio::spawn(async move {
-                        let _ = Self::process_notifications(notification_peripheral, decoder).await;
+                        Self::process_notifications(&notification_peripheral, decoder).await.unwrap();
                         ()
                     }));
                     let command_peripheral = self.raw_peripheral.clone();
                     let command_characteristic = characteristic.clone();
-                    let command_rx = self.rx.take().unwrap();
+                    let mut command_rx = self.rx.take().unwrap();
                     self.command_handle = Some(tokio::spawn(async move {
-                        for command in command_rx {
-                            let _ = HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command).await;
-                            //sleep(Duration::from_millis(1000)).await;
+                        while let Some(command) = command_rx.recv().await {
+                            HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command).await.unwrap();
                         }
                         ()
                     }));
@@ -118,16 +120,15 @@ impl HomeLightPeripheral {
                 eprintln!("Error connecting to peripheral, retrying: {}", err);
             }
         }
-        let is_connected = peripheral.is_connected().await.unwrap_or(false);
-        //let local_name = self.raw_peripheral.properties().await?.local_name.unwrap_or(String::from("<null>"));
 
-        
-        is_connected
+        peripheral.is_connected().await.unwrap_or(false)
     }
 
-    async fn process_notifications(peripheral: Peripheral, mut decoder: decoder::HomeLightDecoder) -> btleplug::Result<()> 
+    async fn process_notifications(peripheral: &Peripheral, mut decoder: decoder::HomeLightDecoder) -> btleplug::Result<()> 
     {
+        println!("Trying to get notification stream for peripheral: {:?}", peripheral);
         let mut notification_stream = peripheral.notifications().await?;
+        println!("Got notification stream for peripheral: {:?}", peripheral);
         // Process while the BLE connection is not broken or stopped.
         while let Some(data) = notification_stream.next().await {
             if data.uuid == NOTIFY_CHARACTERISTIC_UUID {
