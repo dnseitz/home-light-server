@@ -100,7 +100,9 @@ impl HomeLightPeripheral {
                     let mut command_rx = self.rx.take().unwrap();
                     self.command_handle = Some(tokio::spawn(async move {
                         while let Some(command) = command_rx.recv().await {
-                            HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command).await.unwrap();
+                            if let Err(error) = HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command).await {
+                                println!("Error sending command: {:?}", error);
+                            }
                         }
                         ()
                     }));
