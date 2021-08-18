@@ -19,8 +19,8 @@ use tokio::time;
 use uuid::Uuid;
 
 /// Only devices whose name contains this string will be tried.
-const PERIPHERAL_NAME_MATCH_FILTER_1: &str = "Bluno";
-const PERIPHERAL_NAME_MATCH_FILTER_2: &str = "TEST_DEVICE";
+const PERIPHERAL_NAME_MATCH_FILTER_1: &str = "TEST_DEVICE";
+const PERIPHERAL_NAME_MATCH_FILTER_2: &str = "Bluno";
 /// UUID of the characteristic for which we should subscribe to notifications.
 const NOTIFY_CHARACTERISTIC_UUID: Uuid = uuid_from_u16(0xDFB1);
 
@@ -50,7 +50,8 @@ async fn start() -> Result<(), Box<dyn Error>> {
         adapter.stop_scan().await.expect("Can't stop scan...");
         let peripherals = adapter.peripherals().await?;
 
-        let mut run_states = Vec::new();
+        let mut run_states: [Option<_>; 2] = [None, None];
+        //let mut run_states = Vec::new();
 
         for peripheral in peripherals.into_iter() {
             let properties = peripheral.properties().await.unwrap();
@@ -60,15 +61,19 @@ async fn start() -> Result<(), Box<dyn Error>> {
                 .unwrap_or(String::from("(peripheral name unknown)"));
 
             println!("Addr: {}", peripheral.address().to_string());
-            if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_1) || local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_2) {
+            if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_1) {
                 println!("Found: {:?}", &local_name);
-                run_states.push(runner::start(&peripheral).await.unwrap());
+                run_states[0] = Some(runner::start(&peripheral).await.unwrap());
+            }
+            if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_2) {
+                println!("Found: {:?}", &local_name);
+                run_states[1] = Some(runner::start(&peripheral).await.unwrap());
             }
         }
 
         println!("Finished checking peripherals");
 
-        let peripheral_state = runner::PeripheralState::new(run_states);
+        let peripheral_state = runner::PeripheralState::new(run_states.iter_mut().filter_map(|x| x.take()).collect());
 
         println!("Launching Rocket!");
 
