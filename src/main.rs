@@ -59,6 +59,7 @@ async fn start() -> Result<(), Box<dyn Error>> {
                 .local_name
                 .unwrap_or(String::from("(peripheral name unknown)"));
 
+            println!("Addr: {}", peripheral.address().to_string());
             if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_1) || local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_2) {
                 println!("Found: {:?}", &local_name);
                 run_states.push(runner::start(&peripheral).await.unwrap());

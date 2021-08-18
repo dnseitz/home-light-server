@@ -118,6 +118,10 @@ impl HomeLightPeripheral {
     async fn connect_if_needed(peripheral: &Peripheral) -> bool {
         while !peripheral.is_connected().await.unwrap_or(false) {
             runner::LIGHT_STATE_REQUEST_IN_FLIGHT.store(false, Ordering::Relaxed);
+            let address = peripheral.address().to_string();
+            if let Err(err) = async_process::Command::new("sudo").arg("hcitool").arg("lecc").arg(address).status().await {
+                eprintln!("Error connecting to peripheral through hcitool: {}", err);
+            }
             if let Err(err) = peripheral.connect().await {
                 eprintln!("Error connecting to peripheral, retrying: {}", err);
             }
