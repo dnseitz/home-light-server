@@ -14,7 +14,7 @@ use crate::decoder::HomeLightMessageType;
 use crate::light::LightInfo;
 use crate::peripheral;
 
-const LIGHT_INFO_TTL: u128 = 300_000;
+const LIGHT_INFO_TTL: u128 = u128::MAX;
 
 pub(crate) struct PeripheralState {
     peripherals: Vec<(RocketRunState, RocketCommandChannel)>

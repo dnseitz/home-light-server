@@ -4,6 +4,7 @@ use btleplug::api::{Characteristic, CharPropFlags, Peripheral as _, WriteType};
 use btleplug::platform::Peripheral;
 use tokio::task::JoinHandle;
 use tokio::sync::mpsc;
+use tokio::time::{timeout, sleep, Duration};
 
 use crate::light::HSVColor;
 use crate::NOTIFY_CHARACTERISTIC_UUID;
@@ -13,6 +14,7 @@ use crate::runner;
 const COMMAND_START_BYTE: u8 = 0xFE;
 const COMMAND_END_BYTE: u8 = 0xFF;
 
+#[derive(Clone)]
 pub(crate) enum Command {
     SetLEDColor(HSVColor),
     SetBrightness(f64),
@@ -100,8 +102,9 @@ impl HomeLightPeripheral {
                     let mut command_rx = self.rx.take().unwrap();
                     self.command_handle = Some(tokio::spawn(async move {
                         while let Some(command) = command_rx.recv().await {
-                            if let Err(error) = HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command).await {
-                                println!("Error sending command: {:?}", error);
+                            while HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command.clone()).await.is_err() {
+                                //println!("Error sending command: {:?}", error);
+                                let _ = command_peripheral.clone().disconnect().await;
                             }
                         }
                         ()
@@ -119,9 +122,16 @@ impl HomeLightPeripheral {
         while !peripheral.is_connected().await.unwrap_or(false) {
             runner::LIGHT_STATE_REQUEST_IN_FLIGHT.store(false, Ordering::Relaxed);
             let address = peripheral.address().to_string();
-            if let Err(err) = async_process::Command::new("sudo").arg("hcitool").arg("lecc").arg(address).status().await {
+            /*
+            if let Err(err) = async_process::Command::new("sudo").arg("hcitool").arg("ledc").arg(&address).status().await {
+                eprintln!("Error disconnecting to peripheral though hcitool: {}", err);
+            }
+            sleep(Duration::from_millis(100)).await;
+            */
+            if let Err(err) = async_process::Command::new("sudo").arg("hcitool").arg("lecc").arg(&address).status().await {
                 eprintln!("Error connecting to peripheral through hcitool: {}", err);
             }
+            sleep(Duration::from_millis(500)).await;
             if let Err(err) = peripheral.connect().await {
                 eprintln!("Error connecting to peripheral, retrying: {}", err);
             }
@@ -154,6 +164,6 @@ impl HomeLightPeripheral {
         }
         println!("Peripheral Connection State: {:?}", peripheral.is_connected().await?);
         println!("Sending Command Data: {:?}", command_data);
-        peripheral.write(characteristic, &command_data, WriteType::WithoutResponse).await
+        timeout(Duration::from_millis(2_000), peripheral.write(characteristic, &command_data, WriteType::WithoutResponse)).await.map_err(|err| btleplug::Error::Other(Box::new(err))).and_then(|n| n)
     }
 }
