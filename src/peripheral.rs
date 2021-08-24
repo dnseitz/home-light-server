@@ -106,6 +106,7 @@ impl HomeLightPeripheral {
                                 //println!("Error sending command: {:?}", error);
                                 let _ = command_peripheral.clone().disconnect().await;
                             }
+                            sleep(Duration::from_millis(100)).await;
                         }
                         ()
                     }));
