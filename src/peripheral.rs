@@ -151,6 +151,8 @@ impl HomeLightPeripheral {
             }
         }
 
+        eprintln!("--- !!Notification Stream Closed!! ---");
+
         Ok(())
     }
 }
