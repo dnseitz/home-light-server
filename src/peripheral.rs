@@ -105,6 +105,7 @@ impl HomeLightPeripheral {
                             while HomeLightPeripheral::send_command(command_peripheral.clone(), &command_characteristic, command.clone()).await.is_err() {
                                 //println!("Error sending command: {:?}", error);
                                 let _ = command_peripheral.clone().disconnect().await;
+                                sleep(Duration::from_millis(500)).await;
                             }
                             sleep(Duration::from_millis(100)).await;
                         }
@@ -120,22 +121,22 @@ impl HomeLightPeripheral {
     }
 
     async fn connect_if_needed(peripheral: &Peripheral) -> bool {
+        use std::cmp;
+
+        let max_sleep_duration = 5_000;
+        let mut sleep_duration = 100;
+
         while !peripheral.is_connected().await.unwrap_or(false) {
             runner::LIGHT_STATE_REQUEST_IN_FLIGHT.store(false, Ordering::Relaxed);
             let address = peripheral.address().to_string();
-            /*
-            if let Err(err) = async_process::Command::new("sudo").arg("hcitool").arg("ledc").arg(&address).status().await {
-                eprintln!("Error disconnecting to peripheral though hcitool: {}", err);
-            }
-            sleep(Duration::from_millis(100)).await;
-            */
             if let Err(err) = async_process::Command::new("sudo").arg("hcitool").arg("lecc").arg(&address).status().await {
                 eprintln!("Error connecting to peripheral through hcitool: {}", err);
             }
-            sleep(Duration::from_millis(500)).await;
             if let Err(err) = peripheral.connect().await {
                 eprintln!("Error connecting to peripheral, retrying: {}", err);
             }
+            sleep(Duration::from_millis(sleep_duration)).await;
+            sleep_duration = cmp::min(sleep_duration * 2, max_sleep_duration);
         }
 
         peripheral.is_connected().await.unwrap_or(false)
