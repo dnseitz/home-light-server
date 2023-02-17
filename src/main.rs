@@ -65,10 +65,10 @@ async fn start() -> Result<(), Box<dyn Error>> {
                 println!("Found: {:?}", &local_name);
                 run_states[0] = Some(runner::start(&peripheral).await.unwrap());
             }
-            if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_2) {
-                println!("Found: {:?}", &local_name);
-                run_states[1] = Some(runner::start(&peripheral).await.unwrap());
-            }
+//            if local_name.contains(PERIPHERAL_NAME_MATCH_FILTER_2) {
+//                println!("Found: {:?}", &local_name);
+//                run_states[1] = Some(runner::start(&peripheral).await.unwrap());
+//            }
         }
 
         println!("Finished checking peripherals");
